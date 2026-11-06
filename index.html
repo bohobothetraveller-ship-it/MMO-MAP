@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Link Stash</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Links">
+<style>
+:root{--bg:#eef2f1;--card:#fff;--ink:#17302b;--mute:#5f7570;--line:#d3ddda;--acc:#0e7c66;--accink:#fff;--danger:#b3372d;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1a18;--card:#16262a;--ink:#e3eeeb;--mute:#93aaa4;--line:#2a3d39;--acc:#3cc4a4;--accink:#08201a;--danger:#ff8a7e;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,system-ui,sans-serif}
+body{padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font:600 28px/1.1 ui-serif,Georgia,serif;margin:8px 0 14px}
+.add{display:grid;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+input,textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px}
+textarea{resize:vertical;min-height:44px}
+button,.btn{font:inherit;font-weight:600;border:0;border-radius:10px;padding:10px 14px;background:var(--acc);color:var(--accink);cursor:pointer;text-decoration:none;display:inline-block}
+button.ghost,.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button.del{color:var(--danger)}
+:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.bar{display:flex;gap:8px;margin:16px 0 8px}
+.bar input{flex:1}
+.count{color:var(--mute);font-size:14px;margin:0 0 8px}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+li{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:10px;padding:12px}
+li h2{font:600 18px/1.25 ui-serif,Georgia,serif;margin:0 0 2px;overflow-wrap:anywhere}
+.url{color:var(--mute);font-size:13px;overflow-wrap:anywhere;margin:0}
+.note{margin:8px 0 0;white-space:pre-wrap}
+.meta{color:var(--mute);font-size:13px;margin:8px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row button,.row .btn{padding:7px 12px;font-size:15px}
+.empty{color:var(--mute);text-align:center;padding:28px 8px}
+footer{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 40px}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.on{opacity:1}
+</style></head>
+<body><main>
+<h1>Link Stash</h1>
+<div class="add">
+  <input id="in" placeholder="Paste a link or shared text" inputmode="url" autocomplete="off">
+  <input id="ti" placeholder="Title (optional)">
+  <textarea id="no" placeholder="Note (optional)"></textarea>
+  <button id="save">Save link</button>
+</div>
+<div class="bar"><input id="q" type="search" placeholder="Search titles, links, notes"></div>
+<p class="count" id="count"></p>
+<ul id="list"></ul>
+<footer>
+  <button class="ghost" id="exp">Export to Excel</button>
+  <button class="ghost" id="imp">Import from Excel</button>
+  <input id="file" type="file" accept=".xlsx,.xls,.csv" hidden>
+</footer>
+</main>
+<div id="toast" role="status"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" async></script>
+<script>
+const KEY='linkstash.v1',$=s=>document.querySelector(s);
+const urlRe=/https?:\/\/[^\s]+/i;
+let items=[];
+try{items=JSON.parse(localStorage.getItem(KEY))||[]}catch(e){items=[]}
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(items));return true}catch(e){toast('Could not save. Storage is full or blocked.');return false}}
+let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2200)}
+function host(u){try{return new URL(u).hostname.replace(/^www\./,'')}catch(e){return u}}
+function parse(text){
+  const m=(text||'').match(urlRe);if(!m)return null;
+  const url=m[0].replace(/[).,]+$/,'');
+  const title=text.replace(m[0],'').split('\n').map(s=>s.trim()).filter(Boolean)[0]||'';
+  return{url,title};
+}
+function add(text,title,note){
+  const p=parse(text);
+  if(!p){toast('No link found');return false}
+  if(items.some(i=>i.url===p.url)){toast('Already saved');return false}
+  items.unshift({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),url:p.url,title:(title||p.title||host(p.url)).trim(),note:(note||'').trim(),date:new Date().toISOString()});
+  if(!persist()){items.shift();return false}
+  render();toast('Saved');return true;
+}
+function render(){
+  const q=$('#q').value.trim().toLowerCase();
+  const rows=items.filter(i=>!q||(i.title+' '+i.url+' '+i.note).toLowerCase().includes(q));
+  $('#count').textContent=items.length?`${rows.length} of ${items.length} saved`:'';
+  const ul=$('#list');ul.innerHTML='';
+  if(!rows.length){const e=document.createElement('p');e.className='empty';e.textContent=items.length?'No links match your search.':'Nothing saved yet. Share a link from Google Maps or paste one above.';ul.append(e);return}
+  for(const i of rows){
+    const li=document.createElement('li');
+    const h=document.createElement('h2');h.textContent=i.title;
+    const u=document.createElement('p');u.className='url';u.textContent=i.url;
+    li.append(h,u);
+    if(i.note){const n=document.createElement('p');n.className='note';n.textContent=i.note;li.append(n)}
+    const m=document.createElement('p');m.className='meta';m.textContent='Saved '+new Date(i.date).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});li.append(m);
+    const r=document.createElement('div');r.className='row';
+    const o=document.createElement('a');o.className='btn';o.href=i.url;o.target='_blank';o.rel='noopener';o.textContent='Open';
+    const e=document.createElement('button');e.className='ghost';e.textContent='Edit';e.onclick=()=>{
+      const t=prompt('Title',i.title);if(t===null)return;
+      const n=prompt('Note',i.note);if(n===null)return;
+      i.title=t.trim()||i.title;i.note=n.trim();persist();render()};
+    const d=document.createElement('button');d.className='ghost del';d.textContent='Delete';d.onclick=()=>{
+      if(!confirm('Delete this link?'))return;items=items.filter(x=>x!==i);persist();render()};
+    r.append(o,e,d);li.append(r);ul.append(li);
+  }
+}
+$('#save').onclick=()=>{if(add($('#in').value,$('#ti').value,$('#no').value)){$('#in').value=$('#ti').value=$('#no').value=''}};
+$('#q').oninput=render;
+$('#exp').onclick=()=>{
+  if(!window.XLSX)return toast('Excel library not loaded yet. Connect once and reload.');
+  if(!items.length)return toast('Nothing to export');
+  const ws=XLSX.utils.json_to_sheet(items.map(i=>({Title:i.title,URL:i.url,Note:i.note,Saved:i.date})));
+  ws['!cols']=[{wch:32},{wch:48},{wch:40},{wch:24}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Links');
+  XLSX.writeFile(wb,'links-'+new Date().toISOString().slice(0,10)+'.xlsx');
+};
+$('#imp').onclick=()=>{if(!window.XLSX)return toast('Excel library not loaded yet. Connect once and reload.');$('#file').click()};
+$('#file').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  try{
+    const wb=XLSX.read(await f.arrayBuffer());
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    let n=0;
+    for(const r of rows){
+      const url=String(r.URL||r.Url||r.url||r.Link||'').trim();
+      if(!/^https?:\/\//i.test(url)||items.some(i=>i.url===url))continue;
+      const d=new Date(r.Saved||r.Date||'');
+      items.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),url,title:String(r.Title||r.title||host(url)),note:String(r.Note||r.note||''),date:isNaN(d)?new Date().toISOString():d.toISOString()});n++;
+    }
+    items.sort((a,b)=>b.date.localeCompare(a.date));
+    persist();render();toast(n?`Imported ${n} new link${n>1?'s':''}`:'No new links to import');
+  }catch(err){toast('Could not read that file')}
+};
+// Incoming share from the iOS Shortcut: ?text=<shared text>
+const p=new URLSearchParams(location.search);
+const incoming=p.get('text')||p.get('url');
+if(incoming){add(incoming);history.replaceState(null,'',location.pathname)}
+render();
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script></body></html>
