@@ -1,4 +1,4 @@
-const C='mmomap-v4';
+const C='mmomap-v5';
 const FONTS='https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=Roboto:wght@400;500&display=swap';
 const A=['./','index.html','manifest.webmanifest','https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'];
 async function cacheFonts(c){
